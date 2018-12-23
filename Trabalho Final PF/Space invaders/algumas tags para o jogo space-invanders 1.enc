@@ -1,0 +1,46 @@
+#lang racket
+
+;movimento do míssil
+( struct	 	 posn (missile-right-arrow) missile-left-arrow))  
+    #: prefab )
+ right-arrow : right?
+left-arrow : left?
+(posn-transform-relative (posn 180)
+
+;game-over
+;  aliens hit the shot: playing -> playing
+(define (aliens hit the shot p)
+  (cond
+    [(or (collision with the missile? p) 
+     (make-game-over (draw-unscaled p))]
+    [else p]))
+; handle-alien-key/game-over : game-over key -> state
+(define (handle-alien-key/game-over g key)
+  (make-get-ready))
+
+
+;pontos
+(define (update points p)
+cond
+[x-missile (+ (alien-x (first (killing-aliens p))) killing-boss))
+(increase-points p)]
+[else p]))
+
+
+;;; eventos-do-jogo
+
+; handle-tick-event: state -> state
+(define (handle-tick-event s)
+  cond
+    [(playing? s) (handle-tick-event / playing s)]
+    [else s]))
+
+; handle-tick-event / playing: playing -> playing
+(define (handle-tick-event / playing p)
+  (handle-collision
+   (update-points
+    (update-killings)))))
+
+
+
+

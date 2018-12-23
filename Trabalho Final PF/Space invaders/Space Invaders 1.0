@@ -1,0 +1,781 @@
+;; The first three lines of this file were inserted by DrRacket. They record metadata
+;; about the language level of this file in a form that our tools can easily process.
+#reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname |Space Invaders 1|) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #f)))
+
+(require 2htdp/image)
+(require 2htdp/universe)
+
+;Definição das imagens
+(define IMG-NAVE-CEN (bitmap "Imagens/nave_reta.png"))
+(define IMG-NAVE-ESQ (bitmap "Imagens/nave_esquerda.png"))
+(define IMG-NAVE-DIR (bitmap "Imagens/nave_direita.png"))
+(define IMG-ALIEN1-P1 (bitmap "Imagens/ALIEN VERDE.png"))
+(define IMG-NAVE-MÃE (bitmap "Imagens/alien boss.png"))
+(define IMG-BACKGROUND (bitmap "Imagens/backgroud 4.gif"))
+(define TIRO-NAVE (bitmap "Imagens/tiroN.png"))
+(define TIRO-ALIEN (bitmap "Imagens/tiroA.png"))
+
+;Dimensões
+
+(define LARGURA (image-width IMG-BACKGROUND))
+(define ALTURA (image-height IMG-BACKGROUND))
+(define LRG-NAVE (image-width IMG-NAVE-CEN))
+(define ALT-NAVE (image-height IMG-NAVE-CEN))
+(define LRG-ALIEN (image-width IMG-ALIEN1-P1))
+(define ALT-ALIEN (image-height IMG-ALIEN1-P1))
+(define LRG-NAVE-M (image-width IMG-NAVE-MÃE))
+(define ALT-NAVE-M (image-height IMG-NAVE-MÃE))
+(define LRG-BALA-N (image-width TIRO-NAVE))
+(define ALT-BALA-N (image-height TIRO-NAVE))
+(define AREA-BALA-N (* LRG-BALA-N ALT-BALA-N ))
+(define LRG-BALA-A (image-width TIRO-ALIEN))
+(define ALT-BALA-A (image-height TIRO-ALIEN))
+(define AREA-BALA-A (* LRG-BALA-A ALT-BALA-A ))
+(define NAVE-X (/ LARGURA 4))
+
+
+;Definição das constantes
+
+(define LINHAS-ALIENS 6)
+(define COLUNAS-ALIENS 6)
+(define ESPAÇO-LINHAS 5)
+(define POS-INIT-NAVE 'left)
+(define VIDA-MIN 0)
+(define VIDA-MAX 3)
+(define VIDA-MAX-NVM 1)
+(define MIN-PTS 0)
+(define TOP-LEFT (make-posn 20 20))
+(define TAMANHO-TEXTO 30)
+(define TICK-0 0)
+(define TICK-10 10)
+(define TICK-3O 30)
+(define PTS-NVMÃE 30)
+(define PTS-ALIEN 10)
+
+
+;Definição das direções /Não completo
+(define (direção-fn direção)
+  (cond
+    [(symbol=? direção 'left)...]
+    [(symbol=? direção 'right)...])) 
+
+;Definição das estruturas
+(define-struct NAVE[posição direção vidas])
+(define-struct MUNDO[aliens nave balasA balasN pontos ticks nvmãe])
+;(define-struct GAME-OVER )
+
+;Construindo as estruturas
+(define NAVE-INIT (make-NAVE
+                   (make-posn (/ LARGURA 2) (- ALTURA 20))
+                   POS-INIT-NAVE
+                   VIDA-MAX))
+(define NAVE-MORRE (make-NAVE
+                    (make-posn (/ LARGURA 2) (- ALTURA 20))
+                    POS-INIT-NAVE
+                    0))
+
+(define MSHIP-INIT (make-NAVE TOP-LEFT 'right 0))
+(define MSHIP-DEAD (make-NAVE TOP-LEFT 'right 0))
+(define MSHIP-APPEAR (make-NAVE TOP-LEFT 'right 1))
+
+;Definição da posição ideal do primeiro alien a partir do numero de colunas
+;Teste retorna a posição ideal do eixo x pro primeiro alien
+(define (first-x cols)
+  (/ (- LARGURA (* (- cols 1) 2 LRG-ALIEN)) 2))
+
+
+
+;Definição que recebe os valores de x e y como numeros representando as colunas e as linhas de aliens
+;Retorna uma lista de aliens atribuidos aos seus posns apropriados
+
+(define (invader-cons-col x y cols)
+  (cond
+    [(= cols 0) empty]
+    [else (cons
+           (make-posn x y)
+           (invader-cons-col
+            (+ x (* 2 LRG-ALIEN)) y (- cols 1)))]))
+
+
+;Definição que recebe a coordenada de y, numero de linhas e de colunas
+;Retorna uma lista de aliens atribuidos aos seus posns apropriados
+
+(define (invader-cons-row y rows cols)
+  (cond
+    [(= rows 0) empty]
+    [else (append
+           (invader-cons-col
+            (first-x cols) y cols)
+           (invader-cons-row
+            (+ y LRG-ALIEN 10);o 10 representa os espaços entre as linhas de colunas
+            (- rows 1)
+            cols))]))
+
+;PONTUAÇÃO
+;Definição que recebe um numero natural e uma imagem.
+;Retorna uma nova imagem com a pontuação na imagem obtida
+(define TOP-CENTER (make-posn (/ LARGURA 2) 15))
+
+(define (draw-score score img)
+  (place-image
+         (text (number->string score) TAMANHO-TEXTO "white")
+         (posn-x TOP-CENTER)
+         (posn-y TOP-CENTER)
+         img))
+
+(check-expect (draw-score 20 IMG-BACKGROUND)
+              (place-image (text "20" TAMANHO-TEXTO "white")
+                           (posn-x TOP-CENTER)
+                           (posn-y TOP-CENTER)
+                           IMG-BACKGROUND))
+
+
+;VIDAS
+;Definição que recebe um numero e uma imagem
+;Retorna uma nova imagem com a pontuação na imagem obtida
+
+(define BOTTOM-RIGHT-CORNER (make-posn (- LARGURA 30)
+                                       (- ALTURA 30)))
+
+(define (draw-lives spaceship img)
+  (place-image
+   (text (number->string (NAVE-vidas spaceship)) TAMANHO-TEXTO "white")
+   (posn-x BOTTOM-RIGHT-CORNER)
+   (posn-y BOTTOM-RIGHT-CORNER)
+   img))
+
+(check-expect (draw-lives NAVE-MORRE IMG-BACKGROUND)
+              (place-image
+               (text "0" TAMANHO-TEXTO "white")
+               (posn-x BOTTOM-RIGHT-CORNER)
+               (posn-y BOTTOM-RIGHT-CORNER)
+
+               IMG-BACKGROUND))
+
+;LISTA DE POSN: LOP IMAGEM IMAGEM -> IMAGEM
+;Recebe uma lista de posns, uma imagem base para estabelecê-las e forma uma imagem representando um item que será desenhado
+;Retorna uma imagem com todos os itens desenhados na imagem base
+
+(define (draw-lopsn posns base-img shape-img)
+  (local (
+          ;draw-posn: Posn Imagem -> Imagem
+          (define (draw-posn posn image)
+            (place-image
+             shape-img
+             (posn-x posn)
+             (posn-y posn)
+             image)))
+    (foldl draw-posn base-img posns)))
+
+;Recebe uma lista de aliens e uma imagem
+;Retorna uma nova imagem com os aliens obtidos
+
+(define (draw-invaders1 invaders img)
+  (draw-lopsn invaders img IMG-ALIEN1-P1))
+
+;Recebe a nave e uma imagem
+;Retorna uma nova imagem desenhando a nave na imagem obtida
+
+(define (draw-spaceship spaceship img)
+  (place-image
+   IMG-NAVE-CEN
+   (posn-x (NAVE-posição spaceship))
+   (posn-y (NAVE-posição spaceship))
+   img))
+
+
+;Recebe a nave mãe e a nave(canhão)
+;Retorna uma nova imagem com a nave mãe desenhada na imagem obtida
+
+(define (draw-mothership mothership img)
+  (place-image
+   IMG-NAVE-MÃE
+   (posn-x (NAVE-posição mothership))
+   (posn-y (NAVE-posição mothership))
+   img))
+
+;Recebe a lista dos tiros da nave e uma imagem
+;Retorna uma nova imagem que desenha uma lista de tiros da nave naquela imagem obtida
+
+(define (draw-sbullets sbullets img)
+  (draw-lopsn sbullets img TIRO-NAVE))
+
+
+;Recebe a lista dos tiros dos aliens e uma imagem
+;Retorna uma nova imagem que desenha uma lista de tiros dos aliens naquela imagem obtida
+
+(define (draw-ibullets ibullets img)
+  (draw-lopsn ibullets img TIRO-ALIEN))
+
+
+;Recebe o mundo
+;Retorna uma imagem representando o mundo obtido
+(define (draw-world world)
+  (draw-invaders1 (MUNDO-aliens world)
+     (draw-spaceship (MUNDO-nave world)
+      (draw-sbullets (MUNDO-balasN world)
+       (draw-ibullets (MUNDO-balasA world)
+        (draw-lives (MUNDO-nave world)
+         (draw-score (MUNDO-pontos world)
+          (if (= 0 (NAVE-vidas (MUNDO-nvmãe world)))
+              IMG-BACKGROUND
+              (draw-mothership (MUNDO-nvmãe world)
+                               IMG-BACKGROUND)))))))))
+
+;Recebe a nave
+;Retorna verdadeiro caso a nave chegue a lado esquerdo da tela
+(define (spaceship-reach-left-corner? spaceship)
+  (<= (- (posn-x (NAVE-posição spaceship)) (/ LRG-NAVE 2)) 0))
+
+;Recebe a nave
+;Retorna verdadeiro caso a nave chegue ao lado direito da tela
+(define (spaceship-reach-right-corner? spaceship)
+  (>= (+ (posn-x (NAVE-posição spaceship)) (/ LRG-NAVE 2))
+      LARGURA))
+
+;Recebe a nave
+;Retorna verdadeiro caso a nave chegue ao lado esquedo ou direoto da tela, retornando falso para a outra opção
+
+(define (spaceship-reach-corner? spaceship)
+  (or
+   (spaceship-reach-left-corner? spaceship)
+   (spaceship-reach-right-corner? spaceship)))
+
+;Movimento da nave
+;Recebe a nave
+;Retorna a nave após seus movimentos por unidade de distancia na direção correta...
+
+(define (move-spaceship spaceship)
+  (cond
+    [(spaceship-reach-corner? spaceship)  spaceship]
+    [(symbol=? (NAVE-direção spaceship) 'left)
+     (make-NAVE
+      (make-posn (- (posn-x (NAVE-posição spaceship)) 15)
+                 (posn-y (NAVE-posição spaceship)))
+      'left
+      (NAVE-vidas spaceship))]
+    [(symbol=? (NAVE-direção spaceship) 'right)
+     (make-NAVE
+      (make-posn (+ (posn-x (NAVE-posição spaceship)) 15)
+                 (posn-y (NAVE-posição spaceship)))
+      'right
+      (NAVE-vidas spaceship))]))
+
+;Recebe o mundo atual
+;Retorna a nave mãe após o primeiro ticks, se a nave mãe for atingida ou sair da tela
+;ela retorna para o jogo após 30 ticks.
+
+(define (mothership-stepper world)
+  (local ((define mothership (MUNDO-nvmãe world))
+          (define ticks (MUNDO-ticks world))
+          (define posn-init (NAVE-posição MSHIP-INIT)))
+    (if (or (= (NAVE-vidas mothership) 0)  ;; mothership is hit or 
+            (mothership-out-of-bounds? mothership))  ;; is out of bounds
+        (if (and (= (modulo ticks TICK-3O) 0)
+                 (>= ticks TICK-3O))
+            MSHIP-APPEAR                    ;; reappears after 30 ticks
+            MSHIP-DEAD)                     ;; remains dead
+        (make-NAVE      ;; if not hit, move one step to the right
+         (make-posn
+          (+ 30 (posn-x (NAVE-posição mothership)))
+          (posn-y posn-init)) 'right 1))))
+
+
+;Recebe o mundo atual e um booleano representando que a nave mãe foi atingida pela nave
+;Retorna uma nova nave depois de movela para uma direção ate que as vidas acabem
+
+(define (spaceship-step world mothership-is-hit)
+  (local ((define spaceship-orig (MUNDO-nave world))
+          (define moved-spaceship (move-spaceship spaceship-orig)))
+    (if (spaceship-is-hit? spaceship-orig (MUNDO-balasA world))
+        (make-NAVE  ;; if hit, re-init the spaceship with a life less
+         (NAVE-posição  NAVE-INIT)
+         (NAVE-direção NAVE-INIT)
+         (- (NAVE-vidas spaceship-orig) 1))
+        (if (not mothership-is-hit)
+            moved-spaceship
+            (make-NAVE
+             (NAVE-posição moved-spaceship)
+             (NAVE-direção moved-spaceship)
+             (+ (NAVE-vidas spaceship-orig) 1))))))
+
+
+
+
+;Recebe uma lista de tiros da nave
+;Retorna uma lista de tiros da nave depois de se moverem por x unidades de distancia na direção correta
+
+(define (move-sbullets sbullets)
+  (cond
+    [(empty? sbullets) empty]
+    [else
+     (local (
+             ;;;; Signature
+             ;; move-sbullet : LoF<SBullet> -> LoF<SBullet>
+             (define (move-sbullet sbullet)
+               (make-posn (posn-x sbullet)
+                          (- (posn-y sbullet) 15))))
+       (map move-sbullet sbullets))]))
+
+
+
+
+;Recebe uma lista de tiros dos aliens
+;Retorna uma lista de tiros dos aliens depois de se moverem por x unidades de distancia na direção correta
+(define (move-ibullets ibullets)
+  (cond
+    [(empty? ibullets) empty]
+    [else 
+     (local (
+             ;;;; Signature
+             ;; move-ibullet : LoF<IBullet> -> LoF<IBullet>
+             (define (move-ibullet ibullet)
+               (make-posn (posn-x ibullet)
+                          (+ (posn-y ibullet) 15))))
+       (map move-ibullet ibullets))]))
+
+
+;Recebe uma lista de invasores
+;Retorna uma nova lista de invasores nas novas posições depois de se moverem para baixo
+;algumas unidades em relação ao seu cumprimento
+;ESTA DEFINIÇÃO TEM DE SER REVISADA OU ALTERADA!!!!
+(define (move-invaders invaders)
+  (if (empty? invaders)
+      empty
+      (map
+       ;;;; Invader -> Invader
+       (lambda (i) 
+         (make-posn (posn-x i)
+                    (+ (posn-y i) LRG-ALIEN)))
+       invaders)))
+
+
+
+
+;Recebe o mundo atual
+;Retorna uma nova lista de invasores e os invasores após se moverem para baixo a cada 10 ticks
+
+
+(define (invaders-step world)
+  (local ((define ticks (MUNDO-ticks world))
+          (define invaders (MUNDO-aliens world)))
+    (if (and (not (= TICK-0 ticks))
+             (= 0 (modulo ticks TICK-10)))
+        (move-invaders invaders)
+        invaders)))
+
+
+
+;Recebe o mundo atual e os eventos do teclado
+;Retorna um novo mundo com a nave ou seus tiros atualizando de acordo com os eventos das teclas
+;(pressionar os botões)
+
+(define INVADERS-4-9 (invader-cons-row (* 4 ESPAÇO-LINHAS) 
+                                       LINHAS-ALIENS COLUNAS-ALIENS))
+(define WORLD-TEST-KH-1-BFR 
+  (make-MUNDO INVADERS-4-9 ;; spaceship reach right corner
+              (make-NAVE
+                (make-posn (- 450 15) 200) 'left VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              (list (make-posn 9 9)) MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-TEST-KH-1-AFT 
+  (make-MUNDO INVADERS-4-9 
+              (make-NAVE 
+                (make-posn (- 450 15 10) 200) 'left VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              (list (make-posn 9 9)) MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-TEST-KH-2-BFR 
+  (make-MUNDO INVADERS-4-9 ;; spaceship reach left corner
+              (make-NAVE (make-posn 15 200) 'left VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              (list (make-posn 9 9)) MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-TEST-KH-2-AFT 
+  (make-MUNDO INVADERS-4-9 
+              (make-NAVE 
+                (make-posn (+ 15 10) 200) 'right VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              (list (make-posn 9 9)) MIN-PTS TICK-0 MSHIP-INIT))
+
+(define WORLD-TEST-KH-3-BFR 
+  (make-MUNDO INVADERS-4-9
+              (make-NAVE 
+                (make-posn (- 450 10) 200) 'left VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              (list (make-posn 9 9)) MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-TEST-KH-3-AFT 
+  (make-MUNDO INVADERS-4-9 
+              (make-NAVE
+                (make-posn (- 450 10) 200) 'right VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              (list (make-posn 9 9)) MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-TEST-KH-4-BFR 
+  (make-MUNDO INVADERS-4-9 
+              (make-NAVE (make-posn 0 0) 'right VIDA-MAX-NVM)
+              empty
+              empty MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-TEST-KH-4-AFT 
+  (make-MUNDO INVADERS-4-9 
+              (make-NAVE (make-posn 0 0) 'right VIDA-MAX-NVM)
+              (list (make-posn 0 0))
+              empty MIN-PTS TICK-0 MSHIP-INIT))
+
+
+;Definição da função
+
+
+(define (key-handler world ke)
+  (cond 
+    [(and (spaceship-reach-left-corner? (MUNDO-nave world))
+          (key=? ke "right"))
+     (make-MUNDO (MUNDO-aliens world)
+       (make-NAVE
+        (make-posn (+ 
+                    (posn-x (NAVE-posição 
+                             (MUNDO-nave world))) 15)
+                    (posn-y (NAVE-posição 
+                            (MUNDO-nave world))))
+        'right
+        (NAVE-vidas (MUNDO-nave world)))
+       (MUNDO-balasN world)
+       (MUNDO-balasA world)
+       (MUNDO-pontos world)
+       (MUNDO-ticks world)
+       (MUNDO-nvmãe world))]
+    [(and (spaceship-reach-right-corner? (MUNDO-nave world))
+          (key=? ke "left"))
+     (make-MUNDO (MUNDO-aliens world)
+       (make-NAVE
+        (make-posn (- 
+                    (posn-x (NAVE-posição 
+                            (MUNDO-nave world))) 15)
+                    (posn-y (NAVE-posição 
+                            (MUNDO-nave world))))
+        'left
+        (NAVE-vidas (MUNDO-nave world)))
+       (MUNDO-balasN world)
+       (MUNDO-balasA world)
+       (MUNDO-pontos world)
+       (MUNDO-ticks world)
+       (MUNDO-nvmãe world))]
+    [(or (key=? ke "left")
+         (key=? ke "right"))
+     (make-MUNDO (MUNDO-aliens world)
+       (make-NAVE 
+        (NAVE-posição (MUNDO-nave world))
+        (string->symbol ke)
+        (NAVE-vidas (MUNDO-nave world)))
+       (MUNDO-balasN world)
+       (MUNDO-balasA world)
+       (MUNDO-pontos world)
+       (MUNDO-ticks world)
+       (MUNDO-nvmãe world))]
+    [(and (key=? ke " ") 
+          (< (length (MUNDO-balasN world)) 10))
+     (make-MUNDO (MUNDO-aliens world)
+       (MUNDO-nave world)
+       (cons (NAVE-posição (MUNDO-nave world))
+             (MUNDO-balasN world))
+       (MUNDO-balasA world)
+       (MUNDO-pontos world)
+       (MUNDO-ticks world)
+       (MUNDO-nvmãe world))]
+    [else world]))
+
+
+
+;Receber o mundo atual
+#|1. Se alguma das balas da nave espacial ou do invasor, ou a nave-mãe sai de campo eles serão removidos da tela.
+2. Se uma bala de nave espacial atingir um invasor, ele precisa ser removido da tela.
+3. Se uma bala invasora atingir a nave espacial, ele precisa ser removido da tela.
+4. Qualquer um dos invasores que são atingidos pela nave espacial balas serão removidas da tela
+5. Para todas as outras naves espaciais e invasoras, e nave espacial ou nave-mãe se não for atingido eles apenas
+passam para a próxima posição do mundo.
+6. a pontuação será atualizada se as balas da espaçonave acertar qualquer um dos invasores, ele será atualizados
+e alguma das balas também atingir a nave-mãe
+7. o carrapato aumenta em 1 em cada etapa mundial
+8. novas balas de invasores podem ser geradas se houver invasores suficientes e as balas não atingiram o valor máximo
+9. a nave-mãe reaparecerá a cada 30 carrapatos se desaparecer ou porque foi atingido ou saiu dos limites
+10. os invasores vão todos descer a quantidade de unidades como seu comprimento a cada 10 ticks|#
+
+(define (world-step world)
+  (local ((define invaders
+            (invaders-step world))
+          (define remove-lst 
+            (filter-sbullets-and-invaders-to-be-removed 
+             world))
+          (define sbullets
+            (move-sbullets
+             (remove-sbullets-or-invaders-after-hit
+              (MUNDO-balasN world)
+              remove-lst)))
+          (define mothership-is-hit
+            (mothership-is-hit? sbullets (MUNDO-nvmãe world)))
+          (define spaceship
+            (spaceship-step world mothership-is-hit))
+          (define invaders-updated
+            (remove-sbullets-or-invaders-after-hit
+             invaders
+             remove-lst)))
+    
+    (remove-bullets-out-of-bounds-world
+     (make-MUNDO invaders-updated
+                 spaceship
+                 sbullets
+                 (move-ibullets
+                  (remove-ibullet-after-hit
+                   spaceship
+                   (invaders-fire 
+                    (random (length invaders))
+                    (MUNDO-balasA world)
+                    invaders)))
+                 (update-score (MUNDO-pontos world)
+                               invaders
+                               invaders-updated
+                               mothership-is-hit)
+                 (+ 1 (MUNDO-ticks world))
+                 (mothership-step world mothership-is-hit)))))
+
+
+;Recebe a pontuação com a lista atual de invasores e se atualiza com a lista de aliens e booleanos representando
+;caso a nave mãe seja atingida pela nave.
+;Retorna se a nave mãe não for atingida, retorna e atualiza a pontuação calculando e analizando quandos aliens foram destruidos
+;Caso contrário, atualize ainda mais a pontuação
+
+(define (update-score old-score invaders-old invaders-new mothership-is-hit)
+  (local ((define invaders-hit-num
+            (- (length invaders-old)
+               (length invaders-new)))
+          (define new-score
+            (+ old-score (* PTS-ALIEN invaders-hit-num))))
+    (if (not mothership-is-hit) 
+        new-score
+        (+ PTS-NVMÃE new-score))))
+
+;Recebe dois posns e retorna verdadeiro caso sejam iguais, pelo contrário retorna falso
+
+(define (posn=? p1 p2)
+  (and (= (posn-x p1) (posn-x p2))
+       (= (posn-y p1) (posn-y p2))))
+
+
+;Esta definição checa de se a o tiro da nave acertou o alien, conferindo se os dois se encontram nos mesmos posn
+; Posn Posn -> Booleano
+
+(define (sbullet-hits-invader? sbullet invader)
+  (and
+   (< (- (posn-y sbullet)  AREA-BALA-N)
+      (+ (posn-y invader) (/ LRG-ALIEN 2)))
+   (> (+ (posn-x sbullet)  AREA-BALA-N)
+      (- (posn-x invader) (/ LRG-ALIEN 2)))
+   (< (- (posn-x sbullet)  AREA-BALA-N)
+      (+ (posn-x invader) (/ LRG-ALIEN 2)))))
+
+
+;Recebe o tiro da nave e uma lista de invasores
+;Retorna verdadeiro caso a bala atinja qualquer invasor da lista, pelo contrário retorna falso
+
+(define (sbullet-hits-invaders? sbullet invaders)
+  (ormap
+   ;;;; Posn -> Boolean
+   (lambda (invader) 
+     (sbullet-hits-invader? sbullet invader))
+   invaders))
+
+
+;Recebe uma lista dos tiros da nave e um alien
+;Retorna verdadiro caso um alien seja atinjido por qualquer bala da nave, caso contrário retorna falso
+
+(define (invader-is-hit? sbullets invader)
+  (ormap 
+   ;;;; Posn -> Boolean
+   (lambda (sbullet)
+     (sbullet-hits-invader? sbullet invader))
+   sbullets))
+
+
+;Recebe uma lista de tiros da nave e a nave mãe
+;Retorna verdadeiro caso a nave mãe seja atinjida por qualquer bala de nave, caso contrário retorna falso
+
+(define (mothership-is-hit? sbullets mothership)
+  (ormap
+   ;;;; SBullet -> Boolean
+   (lambda (sb) (sbullet-hits-invader? sb (NAVE-posição mothership)))
+   sbullets))
+
+
+;Recebe o mundo atual e um booleano representando caso a nave mãe seja atingida pela nave
+;Retorna uma nave mãe caso o booleano seja verdaeiro, caso contrário retorna uma nova nave mãe no proximo passo do mundo
+
+(define (mothership-step world mothership-is-hit)
+  (if mothership-is-hit
+      MSHIP-INIT
+      (mothership-stepper world)))
+
+
+;Definição de dados
+;Tiros os aliens se tornam uma lista de posns
+;Representam uma lista contendo os tiros e(ou) os aliens
+;Recebe uma lista de tiros da nave e uma lista de invasores
+;Retorna uma unica lista contendo os tiros da nave e os aliens que serão removidos
+
+(define (filter-sbullets-and-invaders-to-be-removed world)
+  (local ((define sbullets (MUNDO-balasN world))
+          (define invaders (MUNDO-aliens world))
+          (define mothership (MUNDO-nvmãe world)))
+    (append
+     ;;;; Posn -> Boolean
+     (filter 
+      (lambda (sb) 
+        (or
+         (sbullet-hits-invaders? sb invaders)
+         (sbullet-hits-invader? sb (NAVE-posição mothership)))) 
+        sbullets)
+     (filter (lambda (i) (invader-is-hit? sbullets i)) invaders))))
+
+
+;Receve uma lista de posns e uma lista de posn
+;Retorna verdadeiro caso recebendo que o posn está na lista, caso contrário retorna falso
+
+(define (lop-contains-posn? lop posn)
+  ;;;; Posn -> Boolean
+  (ormap (lambda (p) (posn=? p posn)) lop))
+
+  
+;Recebe uma lista de posns (balas da nave ou aliens) e uma lista das balas da nave e invasores que serão removidos
+;Retorna uma lista de posns (balas e aliens) depois de removê-los
+
+(define (remove-sbullets-or-invaders-after-hit
+         sbullets-or-invaders s-and-i-to-be-removed)
+  (filter
+   ;;;; Posn -> Boolean
+   (lambda (s-or-i)
+     (not (lop-contains-posn? s-and-i-to-be-removed s-or-i))) 
+   sbullets-or-invaders))
+
+;Recebe uma bala
+;Retorna verdadeiro caso a bala saia da cena, caso contrário retorna falso
+
+(define (bullet-out-of-bounds? bullet)
+  (or (<= (+ (posn-y bullet) AREA-BALA-N) 0)
+      (>= (- (posn-y bullet) AREA-BALA-N) ALTURA)))
+
+
+;Recebe a nave mãe
+;Retorna se a nave mãe saiu da cena
+
+(define (mothership-out-of-bounds? mothership)
+  (>= (+ (posn-x (NAVE-posição mothership))
+         (/ LRG-ALIEN 2)) LARGURA))
+
+;Recebe a lista de balas
+;Retorna uma nova lista com as balas que sairam da cena para serem removidas
+
+(define (remove-bullets-out-of-bounds bullets)
+  ;;;; Posn -> Boolean
+  (filter (lambda (b) (not (bullet-out-of-bounds? b))) bullets))
+
+;Recebe o mundo
+;Retorna um novo mundo depois que os tiros da nave e os aliens foram removidos da cena
+
+(define (remove-bullets-out-of-bounds-world world)
+  (make-MUNDO
+   (MUNDO-aliens world)
+   (MUNDO-nave world)
+   (remove-bullets-out-of-bounds (MUNDO-balasN world))
+   (remove-bullets-out-of-bounds (MUNDO-balasA world))
+   (MUNDO-pontos world)
+   (MUNDO-ticks world)
+   (MUNDO-nvmãe world)))
+
+;Recebe uma lista de invasores e um índice (baseado em zero) do invasor que o usuário quer retirar
+;Retorna o alien na lista com esse índice
+
+(define (invader-at invaders index)
+  (cond
+    [(empty? invaders) empty]
+    [(= 0 index) (first invaders)]
+    [else (invader-at (rest invaders) (- index 1))]))
+
+
+
+;Recebe um numero natural, uma lista de tiros dos aliens e uma lista de aliens
+;Retorna uma nova lista de tiros dos invasores com balas recém atiradas adicionadas
+
+(define (invaders-fire amount ibullets invaders)
+  (cond
+    [(or 
+      (> (+ (length ibullets) amount) 6)
+      (< amount 1)) ibullets]
+    [else
+     (cons
+      (invader-at invaders (random (length invaders)))
+      (invaders-fire
+       (- amount 1)
+       ibullets
+       invaders))]))
+
+
+;Recebe a nave e uma bala
+;Retorna verdadeiro caso a bala na cena atinja a nave, caso contrário retorna falso
+(define (bullet-hits-spaceship? spaceship bullet)
+  (and 
+   (> (+ (posn-x bullet) AREA-BALA-A) 
+      (- (posn-x (NAVE-posição spaceship)) (/ LRG-NAVE 2)))
+   (< (- (posn-x bullet) AREA-BALA-A) 
+      (+ (posn-x (NAVE-posição spaceship)) (/ LRG-NAVE 2)))
+   (> (+ (posn-y bullet) AREA-BALA-A) 
+      (- (posn-y (NAVE-posição spaceship)) (/ ALT-NAVE 2)))))
+
+
+;Recebe a nave e uma lista dos tiros dos aliens
+;Retorna uma nova lista de tiros dos aliens depois de um atingir a nave e ser removido
+
+(define (remove-ibullet-after-hit spaceship ibullets)
+  (filter (lambda (i) (not (bullet-hits-spaceship? spaceship i))) ibullets))
+
+
+;Recebe a nave e uma bala
+;Retorna verdadeiro caso a bala na cena atinja a nave, caso contrário retorna falso
+
+(define (spaceship-is-hit? spaceship ibullets)
+  (ormap (lambda (i)  ;;;; Posn -> Boolean
+           (bullet-hits-spaceship? spaceship i))
+         ibullets))
+
+
+;Definição que torna uma lista dos aliens em booleano indicando se eles chegaram ao final da imagem
+
+(define (invaders-reach-btm? invaders)
+  (ormap 
+   ;;;; Invader -> Boolean
+   (lambda (i)
+     (>= (posn-y i) BTM-OF-FIELD)) 
+   invaders))
+
+
+;Recebe o mundo atual
+;Retorna verdadeiro caso a nave seja acertado por qualquer bala dos aliens, caso contrário retorna falso
+
+(define BTM-OF-FIELD (+ (posn-y (NAVE-posição NAVE-INIT))
+                        (/ ALT-NAVE 2)))
+
+(define (end-game? world)
+  (or (= (NAVE-vidas (MUNDO-nave world)) 0)
+      (invaders-reach-btm? (MUNDO-aliens world))))
+
+;DEFINIÇÕES FINAIS DO JOGO
+
+(define POSN-BOTTOM-MID (make-posn (/ LARGURA 2) (- ALTURA 20)))
+(define BULLETS-SPACESHIP (cons POSN-BOTTOM-MID empty))
+(define WORLD-INIT 
+  (make-MUNDO INVADERS-4-9 NAVE-INIT 
+    empty empty MIN-PTS TICK-0 MSHIP-INIT))
+(define WORLD-END 
+  (make-MUNDO INVADERS-4-9 NAVE-MORRE 
+    empty empty MIN-PTS TICK-0 MSHIP-INIT))
+
+(big-bang WORLD-INIT
+          (to-draw draw-world)
+          (on-tick world-step 0.1)
+          (on-key key-handler)
+          (stop-when end-game?))
